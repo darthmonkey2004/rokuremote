@@ -54,12 +54,10 @@ class Discover():
 		)
 		socket.setdefaulttimeout(self.TIMEOUT)
 		responses = {}
-
 		for _ in range(self.RETRIES):
 			sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
 			sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 			sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 2)
-
 			m = message.format(st="roku:ecp")
 			sock.sendto(m.encode(), ("239.255.255.250", 1900))
 			l = []
@@ -101,7 +99,6 @@ class UI():
 			row = self.ROW
 			self.ROW = []
 		self.LAYOUT.append(row)
-
 	def addToFrame(self, title='Test frame', layout=None, width=None, height=None, tooltip='test tooltip', expand_x=False, expand_y=False):
 		if layout is None:
 			if len(self.ROW) > 0:
@@ -115,7 +112,6 @@ class UI():
 		self.FRAMES.append(frame)
 		return frame
 		print("Frame added!")
-
 	def getWindow(self, title='Test Window', layout=None, width=640, height=480, expand_x=False, expand_y=False):
 		key=f"-{title}-"
 		if layout is None or len(layout) == 0:
@@ -131,7 +127,6 @@ class UI():
 				layout = [layout]
 		self.WINDOW = sg.Window(title=title, layout=layout, size=(width, height)).finalize()
 		return self.WINDOW
-
 	def save(self, filepath=None, win=None):
 		if win is None:
 			win = self.WINDOW
@@ -167,28 +162,27 @@ class Roku():
 		self.SETTINGS = {}
 		try:
 			self.SETTINGS = self._load_settings()
+			p = self.PORT
 			try:
 				self.PORT = self.SETTINGS['port']
 			except:
-				self.SETTINGS['port'] = 8060
+				#if port set fails, set setting to temp var and then set class attribute.
+				print("Couldn't set port from settings! ")
+				self.SETTINGS['port'] = p
 				self.PORT = self.SETTINGS['port']
 		except Exception as e:
-			pass
+			print("Failed to load settings:", e)
 		if self.HOST is not None:
 			if self.HOST not in self.DEVICES:
 				self.DEVICES.append(self.HOST)
-			print("loaded host:", self.HOST)
+			print("Host set:", self.HOST)
 		elif self.HOST is None:
+			print("Host is None!")
 			try:
 				self.HOST = self.SETTINGS['host']
 				if self.HOST is None:
-					print("Host saved in settings is None! Re-initializing...")
+					print("Couldn't retreive host from settings! Re-initializing...")
 					self.SETTINGS = self._init_settings(r=True)
-					self.HOST = self.SETTINGS['host']
-					self.SETTINGS['url'] = self.BASE_URL
-					self.SETTINGS['settings_file'] = self.SETTINGS_FILE
-					self.SETTINGS['data_directory'] = self.DATA_DIR
-					self.SETTINGS['devices'] = self.DEVICES
 					self._save_settings(self.SETTINGS)
 					if self.HOST is None:
 						scan = True
@@ -405,7 +399,11 @@ class Roku():
 		return xmldict.xml_to_dict(self._send(f"{self.BASE_URL}/query/device-info"))['device-info']
 	def _query_media_player(self):
 		string = self._send(f"{self.BASE_URL}/query/media-player")
-		return xmltojson.xmltodict.parse(string)['player']
+		try:
+			return xmltojson.xmltodict.parse(string)['player']
+		except Exception as e:
+			print(f"Error getting media player info from roku: {e}")
+			return {}
 	def _keyPress(self, key):
 		#send a key to the roku device.
 		url = None
@@ -427,21 +425,25 @@ class Roku():
 		#get and parse xml data for all apps
 		#currently installed on the Roku device.
 		url = f"{self.BASE_URL}/query/apps"
-		apps = self._send(url).splitlines()
-		apps.pop(0)
-		apps.pop(0)
-		ct = len(apps) - 1
-		apps.pop(ct)
-		l = []
-		for line in apps:
-			d = {}
-			d['appid'] = line.split('id="')[1].split('"')[0]
-			d['type'] = line.split('type="')[1].split('"')[0]
-			d['version'] = line.split('version="')[1].split('"')[0]
-			d['name'] = line.split('">')[1].split('</app')[0]
-			l.append(d)
-		self.APPS = l
-		return l
+		try:
+			apps = self._send(url).splitlines()
+			apps.pop(0)
+			apps.pop(0)
+			ct = len(apps) - 1
+			apps.pop(ct)
+			l = []
+			for line in apps:
+				d = {}
+				d['appid'] = line.split('id="')[1].split('"')[0]
+				d['type'] = line.split('type="')[1].split('"')[0]
+				d['version'] = line.split('version="')[1].split('"')[0]
+				d['name'] = line.split('">')[1].split('</app')[0]
+				l.append(d)
+			self.APPS = l
+			return l
+		except Exception as e:
+			print(f"Error in _get_apps(): {e}")
+			return {}
 	def UpdateApps(self):
 		apps = self._get_apps()
 		self.APPS_BY_ID = {}
@@ -555,19 +557,34 @@ class Roku():
 		print("Settings applied!")
 
 	def _init_settings(self, settings={}, r=False):
+		"""
+		initializes class attributes from SETTINGS variable.
+		setting key is __attr__.lower()
+		
+		Exceptions: (don't follow that schema - TODO - FIX THAT!)
+		self.SETTINGS['url'] = self.BASE_URL
+		self.SETTINGS['data_directory'] = self.DATA_DIR
+
+		Examples:
+		self.SETTINGS['settings_file'] = self.SETTINGS_FILE
+		self.SETTINGS['devices'] = self.DEVICES
+		
+		"""
 		#if settings file exists, attempt to load from file.
 		if not os.path.exists(self.SETTINGS_FILE):
-			r = True#set reinit flag to True
+			settings = None
 		else:
 			try:
+				#if load succeeds, set re-init to False
 				settings = self._load_settings()
-				r = False
 			except Exception as e:
 				#if load fails, create empty and complain.
 				print(f"Couldn't load settings file! Initializing again...")
-				r = True
-		if r:#create and save dictionary to pickled data file.
+				settings = None
+		if r or settings is None:#full init: 'r' flag or 'settings is None' indicates a fail in settings dictionary, triggers re-init.
+			#r flag in arguments will pre set this. Saves Dictionary to pickled dat file.
 			if self.HOST is None:
+				#if class attribute HOST is None, discover and auto-select first ip
 				print("Discovering and auto-selecting first device...")
 				settings['devices'] = sorted(self.DISCOVER())
 				self.DEVICES = settings['devices']
@@ -575,6 +592,7 @@ class Roku():
 				print("Host set:", self.HOST)
 				#settings['host'] = input("Enter host ip:")
 			else:
+				#if it's set, use it as host key value in settings.
 				settings['host'] = self.HOST
 				print(f"Host set: {self.HOST}")
 			print("TODO: Create function to manage network scanning and select default device automatically.")
