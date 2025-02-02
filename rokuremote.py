@@ -18,6 +18,66 @@ from urllib.parse import quote
 import socket
 #from discovery2 import RokuDiscoverer
 
+def getKeys():
+	keys = {}
+	keys['a'] = 38
+	keys['b'] = 56
+	keys['c'] = 54
+	keys['d'] = 40
+	keys['e'] = 26
+	keys['f'] = 41
+	keys['g'] = 42
+	keys['h'] = 43
+	keys['i'] = 31
+	keys['j'] = 44
+	keys['k'] = 45
+	keys['l'] = 46
+	keys['m'] = 58
+	keys['n'] = 57
+	keys['o'] = 32
+	keys['p'] = 33
+	keys['q'] = 24
+	keys['r'] = 27
+	keys['s'] = 39
+	keys['t'] = 28
+	keys['u'] = 30
+	keys['v'] = 55
+	keys['w'] = 25
+	keys['x'] = 53
+	keys['y'] = 29
+	keys['z'] = 52
+	keys['1'] = 10
+	keys['2'] = 11
+	keys['3'] = 12
+	keys['4'] = 13
+	keys['5'] = 14
+	keys['6'] = 15
+	keys['7'] = 16
+	keys['8'] = 17
+	keys['9'] = 18
+	keys['0'] = 19
+	keys['at'] = 11
+	keys['numbersign'] = 12
+	keys['exclam'] = 10
+	keys['dollar'] = 13
+	keys['percent'] = 14
+	keys['asciicircum'] = 15
+	keys['ampersand'] = 16
+	keys['asterisk'] = 17
+	keys['parenleft'] = 18
+	keys['parenright'] = 19
+	keys['underscore'] = 20
+	keys['minus'] = 20
+	keys['plus'] = 21
+	keys['equal'] = 21
+	keys['BackSpace'] = 22
+	keys['Delete'] = 119
+	out = {}
+	for k in keys:
+		out[k.lower()] = keys[k]
+		out[k.title()] = keys[k]
+	return out
+
 class _FakeSocket(BytesIO):
     def makefile(self, *args, **kw):
         return self
@@ -112,7 +172,9 @@ class UI():
 		self.FRAMES.append(frame)
 		return frame
 		print("Frame added!")
-	def getWindow(self, title='Test Window', layout=None, width=640, height=480, expand_x=False, expand_y=False):
+	def getWindow(self, title='Test Window', layout=None, grab_keyboard=True, width=640, height=480, expand_x=False, expand_y=False):
+		self.GRAB_KEYBOARD = grab_keyboard
+		#sets default for returning filtered keyboard events in the main remote menu
 		key=f"-{title}-"
 		if layout is None or len(layout) == 0:
 			self.addToFrame(title=title, layout=layout, width=width, height=height, expand_x=expand_x, expand_y=expand_y)
@@ -125,7 +187,7 @@ class UI():
 		elif len(layout) >= 1:
 			if type(layout[0]) != list:
 				layout = [layout]
-		self.WINDOW = sg.Window(title=title, layout=layout, size=(width, height)).finalize()
+		self.WINDOW = sg.Window(title=title, layout=layout, size=(width, height), return_keyboard_events=True, use_default_focus=False).finalize()
 		return self.WINDOW
 	def save(self, filepath=None, win=None):
 		if win is None:
@@ -667,13 +729,15 @@ class Roku():
 		return subprocess.check_output(f"chmod +x '{dest}'", shell=True).decode().strip()
 
 class rokuui(Roku):
-	def __init__(self, exec_setup=False):
+	def __init__(self, exec_setup=False, grab_keyboard=True):
 		"""
 		Main class for roku remote. Uses rokuremote.py.
 		TODO: just added search to rokuremote.py. Need to test it.
 		"""
 		super().__init__(exec_setup=exec_setup)
 		self.ui = UI()
+		self.GRAB_KEYBOARD = grab_keyboard
+		self.IS_TYPING = False
 		#self.= Roku(exec_setup=exec_setup)
 		#print("Remote Dict:", self.__dict__)
 		self.run()
@@ -699,6 +763,8 @@ class rokuui(Roku):
 		files['search'] = os.path.join(self.ICONS_PATH, "search.png")
 		files['enter'] = os.path.join(self.ICONS_PATH, "enter.png")
 
+		self.ui._add_elementToRow(sg.Checkbox("Grab keyboard events:", default=self.GRAB_KEYBOARD, auto_size_text=True, change_submits=True, enable_events=True, key="-TOGGLE_GRAB_KEYBOARD-", tooltip=None))
+		self.ui._add_rowToLayout()
 		self.ui._add_elementToRow(sg.Image(size=(100, 100), filename=files['rev'], key="-REWIND-", background_color='white', tooltip="Rewind", enable_events=True))
 		self.ui._add_elementToRow(sg.Image(size=(100, 100), filename=files['play'], key="-PLAY_PAUSE-", background_color='white', tooltip="Play/Pause", enable_events=True))
 		self.ui._add_elementToRow(sg.Image(size=(100, 100), filename=files['fwd'], key="-FORWARD-", background_color='white', tooltip="Fast Forward", enable_events=True))
@@ -794,13 +860,78 @@ class rokuui(Roku):
 				self.WINDOW['-OUTPUT-'].update("No devices found! Try again or choose a different scan type.")
 		self._save_settings(self.SETTINGS)
 
+	def testKeys(self, keystr, keep_keypad_separate=True):
+		ascii_words = {'at': '@', 'numbersign': '#', 'exclam': '!', 'dollar': '$', 'percent': '%', 'asciicircum': '^', 'ampersand': '&', 'asterisk': '*', 'parenleft': '(', 'parenright': ')', 'underscore': '_', 'minus': '-', 'plus': '+', 'equal': '='}
+		words = list(ascii_words.keys())
+		if keystr.split(':')[0] in words:#if keystr needs ascii translated, assume keyboard input, set attrs, and return char.
+			k, self.KEY_NUMBER = keystr.split(':')
+			self.KEY_NAME = ascii_words[k]
+			self.KEYPRESS = f"{self.KEY_NAME}:{self.KEY_NUM}"
+			return f"TYPE_CHAR_{self.KEY_NAME}"
+		print("keystr:", keystr)
+		chars = getKeys()
+		if keystr is None:
+			return None
+		#if return keyboard events:
+		if self.GRAB_KEYBOARD:
+			self.KEYPRESS = keystr
+			#set keypress attribute on test, regardless of filter
+			keys = ['Escape', 'Space', 'Select', 'Play', 'Up', 'Left', 'Right', 'Down', '111', '113', '114', '116', '85', '83', '80', '88', '65', '9']
+			if ':' in keystr:
+				self.KEY_NAME, self.KEY_NUM = keystr.split(':')
+			else:
+				self.KEY_NAME, self.KEY_NUM = keystr, None
+			self.KEY_NAME = self.KEY_NAME.title()
+			if self.KEY_NAME in list(chars.keys()) or self.KEY_NAME in words:
+				if self.KEY_NAME in words:
+					self.KEY_NAME = ascii_words[self.KEY_NAME]
+				#if in list of single keyboard chars, assume typed letter and change to send key event tag.
+				name = f"TYPE_CHAR_{self.KEY_NAME}"
+				return name
+			elif 'KP_' in self.KEY_NAME:
+				name = self.KEY_NAME.split('KP_')[1]
+				#if separating keypad directions from arrow keys...
+				if not keep_keypad_separate:
+					self.KEY_NAME = name
+					#overwrite class attribute with direction name
+			else:#else use as is
+				name = self.KEY_NAME
+			if name == 'Space':
+				print("Space bar >> play/pause")
+				name = 'Play_Pause'
+				self.KEY_NAME = name
+			if name == 'Enter' or name == 'Return':
+				print("enter/return >> select")
+				name = 'Select'
+				self.KEY_NAME = name
+			if name == 'Escape':
+				print("Escape >> Back")
+				name = "Back"
+				self.KEY_NAME = name
+			print("name:", name)
+			if name in keys:
+				return name
+			elif self.KEY_NUM in keys:
+				return self.KEY_NAME
+			else:
+				return None
+		else:
+			return None
+
 def main(exec_setup=False):
 	r = rokuui(exec_setup=exec_setup)
 	win = r.ui.WINDOW
 	while True:
 		e, v = win.read()
+		k = r.testKeys(e)
+		if k is not None:
+			e = f"-{k.upper()}-"
+			print("key pressed:", e)
 		if e == sg.WINDOW_CLOSED:
 			break
+		elif e == '-TOGGLE_GRAB_KEYBOARD-':
+			r.GRAB_KEYBOARD = v[e]
+			print("Keyboard event capture toggled:", r.GRAB_KEYBOARD)
 		elif e == '-SCAN_TYPE_HTTP-':
 			r.SCAN_TYPE = 'http'
 			print("Scan type set: http")
@@ -833,6 +964,10 @@ def main(exec_setup=False):
 			r._keyPress('Down')
 		elif e == '-ENTER-':
 			r._keyPress('Enter')
+		elif '-TYPE_CHAR_' in e:
+			k = e.split('-TYPE_CHAR_')[1].split('-')[0]
+			r._keyPress(k)
+			print(f"Sent keyboard input to roku: {k}")
 		else:
 			print(e, v)
 if __name__ == "__main__":
