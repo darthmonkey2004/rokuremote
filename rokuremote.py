@@ -15,7 +15,9 @@ import os
 import requests
 from difflib import SequenceMatcher
 from urllib.parse import quote
-import socket
+import time
+from threading import Thread
+from queue import Queue
 #from discovery2 import RokuDiscoverer
 
 def getKeys():
@@ -172,7 +174,7 @@ class UI():
 		self.FRAMES.append(frame)
 		return frame
 		print("Frame added!")
-	def getWindow(self, title='Test Window', layout=None, grab_keyboard=True, width=640, height=480, expand_x=False, expand_y=False):
+	def getWindow(self, title='Test Window', layout=None, grab_keyboard=True, width=900, height=600, expand_x=False, expand_y=False):
 		self.GRAB_KEYBOARD = grab_keyboard
 		#sets default for returning filtered keyboard events in the main remote menu
 		key=f"-{title}-"
@@ -197,7 +199,9 @@ class UI():
 		win.save_to_disk(filepath)
 
 class Roku():
-	def __init__(self, host=None, port=8060, scan=False, scan_type='ssdp', exec_setup=False):
+	def __init__(self, host=None, port=8060, scan=False, scan_type='ssdp', exec_setup=False, play_at_start=True, wait=1):
+		self.ENSURE_PLAY_AT_START = play_at_start
+		self.PLAYBACK_MONITOR_QUEUE = Queue()
 		self.ACTIVE_APP = None
 		self.SCAN_TYPE = 'ssdp'
 		self.HOST = host
@@ -287,6 +291,18 @@ class Roku():
 			self.PLAYER = self._query_media_player()
 			self.APPS = self.UpdateApps()
 		self._save_settings()
+		#initialize playback state
+		self.STATE = self.getPlayerState()
+		self.LAST_STATE = None
+		#sets flag to ensure than when playback starts,
+		#it does so at the beginning rather than the
+		#last recorded chapter in history on device.
+		self.LAST_PLAYBACK_PERCENTAGE = 0
+		self.PLAYBACK_PERCENTAGE = self.getPlaybackPercentage()
+		self.STATES = ['play', 'pause', 'close', 'startup', 'buffer']
+		#init wait attribute. this is how long pauses take before proceeding.
+		self.WAIT = wait
+
 
 	def getlocalip(self):
 		return subprocess.check_output("ifconfig | grep '192.168' | xargs | cut -d ' ' -f 2", shell=True).decode().strip()
@@ -437,7 +453,7 @@ class Roku():
 			try:
 				return r.json()
 			except Exception as e:
-				print("Couldn't get json. Returning text object...")
+				#print("Couldn't get json. Returning text object...")
 				return r.text
 	def _parse_xml(self, xml_string):
 		if type(xml_string) == str:
@@ -728,19 +744,172 @@ class Roku():
 			f.close()
 		return subprocess.check_output(f"chmod +x '{dest}'", shell=True).decode().strip()
 
+	def togglePlayAtStart(self):
+		if self.ENSURE_PLAY_AT_START:
+			self.ENSURE_PLAY_AT_START = False
+		else:
+			self.ENSURE_PLAY_AT_START = True
+		print(f"Play at start toggled:", self.PLAY_AT_START)
+		return self.ENSURE_PLAY_AT_START
+
+	def getPlaybackPercentage(self):
+		"""
+		calculates playback percentage by querying media player on device,
+		retreiving duration and position values, and converting to percentage.
+		"""
+		try:
+			info = self._query_media_player()
+			self.PLAYBACK_PERCENTAGE = round(int(info['position'].split(' ')[0]) / int(info['duration'].split(' ')[0]) * 100, 2)
+		except:
+			self.PLAYBACK_PERCENTAGE = 0
+		return self.PLAYBACK_PERCENTAGE
+
+	def getPlayerState(self):
+		"""
+		retreives player state ('playing', 'stopped', etc ...)
+		"""
+		return self._query_media_player()['@state']
+
+	def hasError(self):
+		"""
+		Checks roku device for error state in media playback
+		"""
+		return json.loads(self._query_media_player()['@error'])
+
+	def getCurrentApp(self):
+		"""
+		returns current app id and name
+		returns a dictionary object
+		"""
+		d = {}
+		d['name'] = info['plugin']['@name']
+		d['id'] = info['plugin']['@id']
+		return d
+
+	def _get_percentage_diff(self):
+		"""
+		get percentage difference of current playback vs start.
+		if jump greater than target, start playback at 0.
+		TODO - ensure on 'close', 'load', 'buffer' states if ENSURE_PLAY_AT_START=True:
+			set flag to trigger resume. This will stop it from doing so during rewinds/fwds and skips
+		"""
+		ret = self.PLAYBACK_PERCENTAGE - self.LAST_PLAYBACK_PERCENTAGE
+		print("tested playback percentage:", self.PLAYBACK_PERCENTAGE)
+		print("Play at start enabled:", self.ENSURE_PLAY_AT_START)
+		if ret >= 1 and self.ENSURE_PLAY_AT_START:
+			print("Playback position not at start. Fixing...")
+			self._keyPress('Select')
+			time.sleep(self.WAIT)
+			self._keyPress('Left')
+			time.sleep(self.WAIT)
+			self._keyPress('Select')
+		#print("diff:", ret)
+
+	def OnStateChange(self, event=None, data=None, q=None):
+		if q is not None:
+			self.PLAYBACK_MONITOR_QUEUE = q
+		d = {}
+		if event is not None:
+			d['event'] = event
+		else:
+			d['event'] = 'state_changed'
+		if data is None:
+			d['data'] = self.STATE
+		else:
+			d['data'] = data
+		self.PLAYBACK_MONITOR_QUEUE.put_nowait(d)
+
+	def PlaybackMonitorEventLoop(self, q=None, wait=None):
+		"""
+		Main monitor loop. Run this as a thread???
+		"""
+		if q is not None:
+			self.PLAYBACK_MONITOR_QUEUE = q
+		if wait is not None:
+			self.WAIT = wait
+		self.PLAYBACK_MONITOR_RUNNING = True
+		while self.PLAYBACK_MONITOR_RUNNING:
+			time.sleep(self.WAIT)
+			self.STATE = self.getPlayerState()
+			if self.STATE == self.LAST_STATE:
+				pass
+			else:
+				self.LAST_PLAYBACK_PERCENTAGE = self.PLAYBACK_PERCENTAGE
+				self.PLAYBACK_PERCENTAGE = self.getPlaybackPercentage()
+				self._get_percentage_diff()
+				if self.STATE not in self.STATES:
+					print("State added:", self.STATE, self.STATES)
+					self.STATES.append(self.STATE)
+					event = 'state_added'
+					event_value = self.STATE
+				if self.STATE == 'play' or self.STATE == 'pause' or self.STATE == 'close':
+					print(self.STATE, self.PLAYBACK_PERCENTAGE)
+					event = 'state_changed'
+					event_value = self.STATE
+				else:
+					print("state:", self.STATE)
+					event = 'unhandled_state'
+					event_value = self.STATE
+					err = self.hasError()
+					if err:
+						print("has_error:", self.hasError())
+						event = 'error_state'
+						event_value = err
+				self.OnStateChange(event=event, data=event_value)
+
+			self.LAST_STATE = self.STATE
+		self.PLAYBACK_MONITOR_RUNNING = False
+		print("PlaybackMonitor exiting...")
+		exit()
+
+	def PlaybackMonitorStop(self):
+		print(f"Killing thread...")
+		self.PLAYBACK_MONITOR_RUNNING = False
+		self.PLAYBACK_MONITOR_THREAD.kill()
+
+	def PlaybackMonitorGet(self):
+		if self.PLAYBACK_MONITOR_QUEUE.unfinished_tasks > 0:
+			event = self.PLAYBACK_MONITOR_QUEUE.get_nowait()
+			self.PLAYBACK_MONITOR_QUEUE.task_done()
+		else:
+			event = None
+		return event
+
+	def PlaybackMonitorStart(self):
+		self.PLAYBACK_MONITOR_THREAD = Thread(target=self.PlaybackMonitorEventLoop, args=(self.PLAYBACK_MONITOR_QUEUE,))
+		self.PLAYBACK_MONITOR_THREAD.daemon = True
+		self.PLAYBACK_MONITOR_THREAD.start()
+		print(f"Playback thread started!")
+
 class rokuui(Roku):
-	def __init__(self, exec_setup=False, grab_keyboard=True):
+	def __init__(self, exec_setup=False, grab_keyboard=True, wait=1):
 		"""
 		Main class for roku remote. Uses rokuremote.py.
 		TODO: just added search to rokuremote.py. Need to test it.
 		"""
-		super().__init__(exec_setup=exec_setup)
+		super().__init__(exec_setup=exec_setup, wait=wait)
 		self.ui = UI()
 		self.GRAB_KEYBOARD = grab_keyboard
 		self.IS_TYPING = False
 		#self.= Roku(exec_setup=exec_setup)
 		#print("Remote Dict:", self.__dict__)
 		self.run()
+
+	def _update_play_at_start(self):
+		self.WINDOW['-TOGGLE_ENSURE_PLAY_AT_START-'].update(self.ENSURE_PLAY_AT_START)
+
+	def _toggle_play_at_start(self):
+		"""
+		No idea why, but this is backwards. Checking checkbox turns it off, unchecking is on, for some reason.
+		Looking into it eventually....
+		"""
+		if self.ENSURE_PLAY_AT_START:
+			self.ENSURE_PLAY_AT_START = True
+		else:
+			self.ENSURE_PLAY_AT_START = False
+		print("Play at start toggled:", self.ENSURE_PLAY_AT_START)
+		return self.ENSURE_PLAY_AT_START
+
 	def frame_MediaControls(self):
 		files = {}
 		files["skip_next"] = os.path.join(self.ICONS_PATH, "next.png")
@@ -763,6 +932,13 @@ class rokuui(Roku):
 		files['search'] = os.path.join(self.ICONS_PATH, "search.png")
 		files['enter'] = os.path.join(self.ICONS_PATH, "enter.png")
 
+		self.ui._add_elementToRow(sg.Text(f"Player state: {self.STATE}", key='-PLAYER_STATE-'))
+		self.ui._add_elementToRow(sg.Text(f"Playback Percentage: %{self.PLAYBACK_PERCENTAGE}", key='-PLAYBACK_PERCENTAGE-'))
+		self.ui._add_rowToLayout()
+		txt = f"Play at start: {self.ENSURE_PLAY_AT_START}"
+		self.ui._add_elementToRow(sg.Text(txt, key=f"-{txt}-"))
+		self.ui._add_elementToRow(sg.Checkbox("Play next from beginning:", default=self.ENSURE_PLAY_AT_START, auto_size_text=True, change_submits=True, enable_events=True, key='-TOGGLE_ENSURE_PLAY_AT_START-', tooltip="Toggle play next from beginning, rather than last chapter in history (if previously viewed)."))
+		self.ui._add_rowToLayout()
 		self.ui._add_elementToRow(sg.Checkbox("Grab keyboard events:", default=self.GRAB_KEYBOARD, auto_size_text=True, change_submits=True, enable_events=True, key="-TOGGLE_GRAB_KEYBOARD-", tooltip=None))
 		self.ui._add_rowToLayout()
 		self.ui._add_elementToRow(sg.Image(size=(100, 100), filename=files['rev'], key="-REWIND-", background_color='white', tooltip="Rewind", enable_events=True))
@@ -861,6 +1037,8 @@ class rokuui(Roku):
 		self._save_settings(self.SETTINGS)
 
 	def testKeys(self, keystr, keep_keypad_separate=True):
+		if keystr == '__TIMEOUT__':
+			return None
 		ascii_words = {'at': '@', 'numbersign': '#', 'exclam': '!', 'dollar': '$', 'percent': '%', 'asciicircum': '^', 'ampersand': '&', 'asterisk': '*', 'parenleft': '(', 'parenright': ')', 'underscore': '_', 'minus': '-', 'plus': '+', 'equal': '='}
 		words = list(ascii_words.keys())
 		if keystr.split(':')[0] in words:#if keystr needs ascii translated, assume keyboard input, set attrs, and return char.
@@ -918,17 +1096,57 @@ class rokuui(Roku):
 		else:
 			return None
 
-def main(exec_setup=False):
-	r = rokuui(exec_setup=exec_setup)
+def start_monitor(r):
+	return r.PlaybackMonitorStart()
+
+def main(exec_setup=False, wait=1, start_playback_monitor=True):
+	"""
+	main execute function for rokuremote.
+	on start:
+		if exec_setup:
+			runs setup, regardless of local directory test results.
+		wait is time to wait before continuing event monitor loop
+		Creates roku object
+		loads settings
+		connects to device or scans for one
+		initializes apps and device info
+	on run:
+		monitors player device states
+		sends kepresses via menu
+		
+	TODO - integrate PlaybackMonitor event loop into this function
+	"""
+	r = rokuui(exec_setup=exec_setup, wait=wait)
+	if start_playback_monitor:
+		thread = start_monitor(r)
 	win = r.ui.WINDOW
+	r._update_play_at_start()
+	k = None
 	while True:
-		e, v = win.read()
-		k = r.testKeys(e)
+		e = r.PlaybackMonitorGet()
+		if e is not None:
+			print("Playback monitor:", e)
+		#using window timeout instead of tine.sleep to pause.
+		#here to stop a request flood for status updates.
+		#TODO - work in threaded process and event queue.
+		#time.sleep(r.WAIT)
+		e, v = win.read(timeout=r.WAIT)
+		if not win.was_closed():
+			win['-PLAYBACK_PERCENTAGE-'].update(f"Playback Percentage: %{r.getPlaybackPercentage()}")
+			win['-PLAYER_STATE-'].update(f"Player state: {r.getPlayerState()}")
+		try:
+			k = r.testKeys(e)
+		except:
+			#if test keys failed, exit occured, close window
+			print("testKeys failed! Closing...")
+			win.close()
 		if k is not None:
 			e = f"-{k.upper()}-"
 			print("key pressed:", e)
 		if e == sg.WINDOW_CLOSED:
 			break
+		elif e == '__TIMEOUT__':
+			pass
 		elif e == '-TOGGLE_GRAB_KEYBOARD-':
 			r.GRAB_KEYBOARD = v[e]
 			print("Keyboard event capture toggled:", r.GRAB_KEYBOARD)
@@ -968,7 +1186,11 @@ def main(exec_setup=False):
 			k = e.split('-TYPE_CHAR_')[1].split('-')[0]
 			r._keyPress(k)
 			print(f"Sent keyboard input to roku: {k}")
+		elif e == '-Toggle_Ensure_Play_At_Start-' or e == '-TOGGLE_ENSURE_PLAY_AT_START-':
+			r.ENSURE_PLAY_AT_START = v[e]
+			r.TOGGLE_ENSURE_PLAY_AT_START = r._toggle_play_at_start()
 		else:
 			print(e, v)
+	exit()
 if __name__ == "__main__":
 	main()
