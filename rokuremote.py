@@ -102,7 +102,7 @@ class Discover():
 		if run:
 			self.discover()
 	def discover(self):
-		print("Scanning via ssdp for devices...")
+		print(time.ctime(), "Scanning via ssdp for devices...")
 		message = "\r\n".join(
 			[
 				"M-SEARCH * HTTP/1.1",
@@ -134,12 +134,12 @@ class Discover():
 							l.append(rssdp.location.split('http://')[1].split(':')[0])
 				except socket.timeout:
 					break
-		print("Scan complete!")
-		print(f"{len(l)} devices found!")
+		print(time.ctime(), "Scan complete!")
+		print(time.ctime(), f"{len(l)} devices found!")
 		pos = 0
 		for i in l:
 			pos += 1
-			print(f"{pos}: {i}")
+			print(time.ctime(), f"{pos}: {i}")
 		self.DEVICES = l
 		return l
 
@@ -173,7 +173,7 @@ class UI():
 		frame = sg.Frame(title=title, layout=layout, title_location='n', size=(width, height), font=None, pad=1, border_width=1, key=key, tooltip=tooltip, expand_x=expand_x, expand_y=expand_y, element_justification="center", vertical_alignment='center') #t (top), c (center), r(bottom)
 		self.FRAMES.append(frame)
 		return frame
-		print("Frame added!")
+		print(time.ctime(), "Frame added!")
 	def getWindow(self, title='Test Window', layout=None, grab_keyboard=True, width=900, height=600, expand_x=False, expand_y=False):
 		self.GRAB_KEYBOARD = grab_keyboard
 		#sets default for returning filtered keyboard events in the main remote menu
@@ -233,59 +233,59 @@ class Roku():
 				self.PORT = self.SETTINGS['port']
 			except:
 				#if port set fails, set setting to temp var and then set class attribute.
-				print("Couldn't set port from settings! ")
+				print(time.ctime(), "Couldn't set port from settings! ")
 				self.SETTINGS['port'] = p
 				self.PORT = self.SETTINGS['port']
 		except Exception as e:
-			print("Failed to load settings:", e)
+			print(time.ctime(), "Failed to load settings:", e)
 		if self.HOST is not None:
 			if self.HOST not in self.DEVICES:
 				self.DEVICES.append(self.HOST)
-			print("Host set:", self.HOST)
+			print(time.ctime(), "Host set:", self.HOST)
 		elif self.HOST is None:
-			print("Host is None!")
+			print(time.ctime(), "Host is None!")
 			try:
 				self.HOST = self.SETTINGS['host']
 				if self.HOST is None:
-					print("Couldn't retreive host from settings! Re-initializing...")
+					print(time.ctime(), "Couldn't retreive host from settings! Re-initializing...")
 					self.SETTINGS = self._init_settings(r=True)
 					self._save_settings(self.SETTINGS)
 					if self.HOST is None:
 						scan = True
-						print(f"Failed get or replace host! Rescanning...")
+						print(time.ctime(), f"Failed get or replace host! Rescanning...")
 					else:
-						print("Host reset to", self.HOST)
+						print(time.ctime(), "Host reset to", self.HOST)
 						scan = False
 				else:
-					print("Host set fom settings:", self.HOST)
+					print(time.ctime(), "Host set fom settings:", self.HOST)
 					scan = False
 			except Exception as e:
-				print(f"Host not in settings. Re-initializing...")
+				print(time.ctime(), f"Host not in settings. Re-initializing...")
 				self.SETTINGS = self._init_settings()
 				self.HOST = sorted(self.DISCOVER())[0]
-				print("Host set:", self.HOST)
+				print(time.ctime(), "Host set:", self.HOST)
 		if scan:
 			try:
 				self.DEVICES = self.DISCOVER()
 			except:
-				print("SSDP discover failed! Trying slow scan..")
+				print(time.ctime(), "SSDP discover failed! Trying slow scan..")
 				self.DEVICES = self._scan_network()
-			print("devices:", self.DEVICES)
+			print(time.ctime(), "devices:", self.DEVICES)
 			if len(self.DEVICES) > 0:
 				self.HOST = self.DEVICES[0]
 				if 'http://' in self.HOST:
 					self.HOST = self.HOST.split('http://')[1].split(':')
 			else:
-				print("No devices found via ssdp. Scanning with http..")
+				print(time.ctime(), "No devices found via ssdp. Scanning with http..")
 				self.HOST = self._scan_network()
 				self.SCAN_TYPE = 'http'
 				self.DEVICES = [self.HOST]
-		#print("Host, Port:", self.HOST, self.PORT)
+		#print(time.ctime(), "Host, Port:", self.HOST, self.PORT)
 		self.BASE_URL = f"http://{self.HOST}:{self.PORT}"
 		try:
 			self.DEVICE_INFO = self._query_device()
 		except Exception as e:
-			print(f"Couldn't get device info!")
+			print(time.ctime(), f"Couldn't get device info!")
 			self.DEVICE_INFO = {}
 		if self.DEVICE_INFO != {}:
 			self.PLAYER = self._query_media_player()
@@ -322,10 +322,10 @@ class Roku():
 					f.close()
 				return True
 			else:
-				print(f"Error downloading icon: Bad status code ({r.status_code}) - {r.text})")
+				print(time.ctime(), f"Error downloading icon: Bad status code ({r.status_code}) - {r.text})")
 				return False
 		except Exception as e:
-			print(f"Error downloading icon: {e}")
+			print(time.ctime(), f"Error downloading icon: {e}")
 			return False
 
 	def search(self, query='Rick and Morty', media_type='series', country='us', match_percentage=72):
@@ -353,7 +353,7 @@ class Roku():
 				out[t] = {}
 			if t == 'series':
 				p = self.compareStrings(title, query)
-				print("%:", p)
+				print(time.ctime(), "%:", p)
 				if p <= match_percentage:
 					pass
 				else:
@@ -369,7 +369,7 @@ class Roku():
 						out[t][title]['first_air_year'] = i['firstAirYear']
 						out[t][title]['last_air_year'] = i['lastAirYear']
 					except Exception as e:
-						print("No air year found!", e)
+						print(time.ctime(), "No air year found!", e)
 						out[t][title]['first_air_year'] = None
 						out[t][title][ 'last_air_year'] = None
 					out[t][title]['seasons'] = i['seasonCount']
@@ -377,7 +377,7 @@ class Roku():
 					out[t][title]['streaming_options'] = i['streamingOptions']
 			elif t == 'movie':
 				p = compareStrings(title, query)
-				print("%:", p)
+				print(time.ctime(), "%:", p)
 				if p <= match_percentage:
 					pass
 				else:
@@ -395,7 +395,7 @@ class Roku():
 			with open(self.SETTINGS_FILE, 'w') as f:
 				f.write('')
 				f.close()
-				print("Settings file created!")
+				print(time.ctime(), "Settings file created!")
 	def _send_local_ip(self):
 		s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 		s.connect(("8.8.8.8", 80))
@@ -408,19 +408,19 @@ class Roku():
 		return '.'.join(localip.split('.')[:3])
 	def _scan_network(self, full=False):
 		if full:
-			print("Scanning network via HTTP for devices...")
+			print(time.ctime(), "Scanning network via HTTP for devices...")
 		else:
-			print("Scanning network via http for first available device...")
+			print(time.ctime(), "Scanning network via http for first available device...")
 		self.DEVICES = []
 		sn = self._send_subnet()
 		for i in range(0, 30):
 			ip = f"{sn}.{i}"
 			url = f"http://{ip}:8060/"
 			try:
-				print("testing ip:", ip)
+				print(time.ctime(), "testing ip:", ip)
 				r = requests.get(url)
 				if '<serviceType>urn:roku-com:service:ecp:1</serviceType>' in r.text:
-					print("device found!", ip)
+					print(time.ctime(), "device found!", ip)
 					self.DEVICES.append(ip)
 					self.SETTINGS['devices'] = self.DEVICES
 					if full:
@@ -439,21 +439,21 @@ class Roku():
 		if rtype == 'GET':
 			r = requests.get(url)
 		else:
-			print("Action:", rtype)
+			print(time.ctime(), "Action:", rtype)
 			if data is not None:
-				print("with data...")
+				print(time.ctime(), "with data...")
 				r = requests.post(url, data=data)
 			else:
-				print("No data for post!")
+				print(time.ctime(), "No data for post!")
 				r = requests.post(url)
 		if r.status_code != 200:
-			print(f"Error in requests: Bad status code ({r.status_code}, {r.text}")
-			return r.text
+			print(time.ctime(), f"Error in requests: Bad status code ({r.status_code}, {r.text}")
+			return False
 		else:
 			try:
 				return r.json()
 			except Exception as e:
-				#print("Couldn't get json. Returning text object...")
+				#print(time.ctime(), "Couldn't get json. Returning text object...")
 				return r.text
 	def _parse_xml(self, xml_string):
 		if type(xml_string) == str:
@@ -465,12 +465,12 @@ class Roku():
 			try:
 				return xmldict.xml_to_dict(xml_string)
 			except Exception as e:
-				print("Couldn't parse xml:", e)
+				print(time.ctime(), "Couldn't parse xml:", e)
 				return xml_string
 		elif type(xml_string) == dict:#if arg is already dict object, return.
 			return xml_string
 		else:
-			print("xml type:", type(xml_string))
+			print(time.ctime(), "xml type:", type(xml_string))
 			input("Press enter to continue...")
 	def _query_device(self):
 		#get and parse device information
@@ -480,24 +480,33 @@ class Roku():
 		try:
 			return xmltojson.xmltodict.parse(string)['player']
 		except Exception as e:
-			print(f"Error getting media player info from roku: {e}")
+			print(time.ctime(), f"Error getting media player info from roku: {e}")
 			return {}
 	def _keyPress(self, key):
+		#turn off play at start whilst we are sending skip event 'n such.
+		self.ENSURE_PLAY_AT_START = False
 		#send a key to the roku device.
 		url = None
 		chars = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z']
 		key_names = ['Home', 'Rev', 'Fwd', 'Play', 'Select', 'Left', 'Right', 'Down', 'Up', 'Back', 'InstantReplay', 'Info', 'Backspace', 'Search', 'Enter']
 		k = quote(key.lower())
-		print("key:", k)
+		print(time.ctime(), "key:", k)
 		if key in chars:
 			url = f"{self.BASE_URL}/keypress/Lit_{quote(k)}"
 		elif key in key_names:
 			url = f"{self.BASE_URL}/keypress/{k}"
-		print("url:", url)
+		print(time.ctime(), "url:", url)
+		print("TODO(???) - Roku._keyPress: set ack and conf flags.")
+		print("Set ack flag on exit here (ENSURE_PLAY_AT_START)")
+		print("Set confirmation flag on state change (event monitor)")
 		if url is not None:
-			return self._send(url, rtype='POST')
+			ret = self._send(url, rtype='POST')
+			if not ret:
+				return False
+			else:
+				return f"{time.ctime()} Keypress function exiting..."
 		else:
-			print("Whoops!")
+			print(time.ctime(), "Whoops!")
 			return None
 	def _get_apps(self):
 		#get and parse xml data for all apps
@@ -520,7 +529,7 @@ class Roku():
 			self.APPS = l
 			return l
 		except Exception as e:
-			print(f"Error in _get_apps(): {e}")
+			print(time.ctime(), f"Error in _get_apps(): {e}")
 			return {}
 	def UpdateApps(self):
 		apps = self._get_apps()
@@ -530,13 +539,13 @@ class Roku():
 			#app['icon_data'] = self._get_app_icon(app['appid'])
 			self.APPS_BY_ID[app['appid']] = app
 			self.APPS_BY_NAME[app['name']] = app
-		print("Applications dictionaries updated!")
+		print(time.ctime(), "Applications dictionaries updated!")
 	def _get_app_icon(self, appid):
 		#TODO - this writes binary data to create icon file.
 		#figure out how to do that to save output, then return a file path.
 		url = f"{self.BASE_URL}/query/icon/{appid}"
-		print("url:", url)
-		print(self._send(url))
+		print(time.ctime(), "url:", url)
+		print(time.ctime(), self._send(url))
 	def _get_active_app(self):
 		#get the current app now running on the roku device.
 		url = f"{self.BASE_URL}/query/active-app"
@@ -573,7 +582,7 @@ class Roku():
 				f.close()
 				return True
 		except Exception as e:
-			print(f"Error saving settings file: {e}")
+			print(time.ctime(), f"Error saving settings file: {e}")
 			return False
 	def _load_settings(self, apply_settings=True):
 		#load settings from pickled data file.
@@ -584,7 +593,7 @@ class Roku():
 				settings = pickle.load(f)
 				f.close()
 		except Exception as e:
-			print(f"Error loading settings file: {e}")
+			print(time.ctime(), f"Error loading settings file: {e}")
 			settings = self._init_settings()
 			self._save_settings(settings)
 			apply_settings = True
@@ -601,11 +610,11 @@ class Roku():
 			try:
 				self.HOST = self.SETTINGS['host']
 			except:
-				print("Host not in settings! Scanning for first available..")
+				print(time.ctime(), "Host not in settings! Scanning for first available..")
 				self.DEVICES = sorted(self.DISCOVER())
 				self.HOST = self.DEVICES[0]
 				self.SETTINGS['host'] = self.HOST
-				print("Host auto set:", self.HOST)
+				print(time.ctime(), "Host auto set:", self.HOST)
 		try:
 			self.PORT = self.SETTINGS['port']
 		except:
@@ -632,7 +641,7 @@ class Roku():
 			self.SCAN_TYPE = 'ssdp'
 			self.SETTINGS['scan_type'] = self.SCAN_TYPE
 		self._save_settings(self.SETTINGS)
-		print("Settings applied!")
+		print(time.ctime(), "Settings applied!")
 
 	def _init_settings(self, settings={}, r=False):
 		"""
@@ -657,30 +666,30 @@ class Roku():
 				settings = self._load_settings()
 			except Exception as e:
 				#if load fails, create empty and complain.
-				print(f"Couldn't load settings file! Initializing again...")
+				print(time.ctime(), f"Couldn't load settings file! Initializing again...")
 				settings = None
 		if r or settings is None:#full init: 'r' flag or 'settings is None' indicates a fail in settings dictionary, triggers re-init.
 			#r flag in arguments will pre set this. Saves Dictionary to pickled dat file.
 			if self.HOST is None:
 				#if class attribute HOST is None, discover and auto-select first ip
-				print("Discovering and auto-selecting first device...")
+				print(time.ctime(), "Discovering and auto-selecting first device...")
 				settings['devices'] = sorted(self.DISCOVER())
 				self.DEVICES = settings['devices']
 				self.HOST = self.DEVICES[0]
-				print("Host set:", self.HOST)
+				print(time.ctime(), "Host set:", self.HOST)
 				#settings['host'] = input("Enter host ip:")
 			else:
 				#if it's set, use it as host key value in settings.
 				settings['host'] = self.HOST
-				print(f"Host set: {self.HOST}")
-			print("TODO: Create function to manage network scanning and select default device automatically.")
-			print("TODO: in ui, allow option to manually input ip address of device.")
+				print(time.ctime(), f"Host set: {self.HOST}")
+			print(time.ctime(), "TODO: Create function to manage network scanning and select default device automatically.")
+			print(time.ctime(), "TODO: in ui, allow option to manually input ip address of device.")
 			settings['port'] = 9060
 			settings['url'] = f"http://{self.HOST}:{self.PORT}"
 			settings['settings_file'] = self.SETTINGS_FILE
 			settings['data_directory'] = self.DATA_DIR
 			self._save_settings(settings)
-			print("Settings initialized!")
+			print(time.ctime(), "Settings initialized!")
 		self.SETTINGS = settings
 		return settings
 
@@ -695,20 +704,20 @@ class Roku():
 			os.makedirs(self.ICONS_PATH, exist_ok=True)
 		com = f"cp '{script_path}' '{dest}'"
 		com2 = f"chmod a+x '{dest}'"
-		print("Script location:", script_path)
-		print("Destination:", dest)
+		print(time.ctime(), "Script location:", script_path)
+		print(time.ctime(), "Destination:", dest)
 		if not os.path.exists(dest):
 			ret = subprocess.check_output(com, shell=True).decode().strip()
 			ret2 = subprocess.check_output(com2, shell=True).decode().strip()
-			print("ret1:", ret)
-			print("ret2:", ret2)
+			print(time.ctime(), "ret1:", ret)
+			print(time.ctime(), "ret2:", ret2)
 		path = os.path.expanduser("~")
 		zipfile = self.locateZip()
 		com = f"cd '{self.ICONS_PATH}'; unzip -o '{zipfile}'"
 		ret = subprocess.check_output(com, shell=True).decode().strip()
-		print(ret)
+		print(time.ctime(), ret)
 		ret = self.create_desktop_file()
-		print(ret)
+		print(time.ctime(), ret)
 	def download_image(self):
 		try:
 			response = requests.get('https://companieslogo.com/img/orig/ROKU-f0e3f010.png?t=1720244493', stream=True)
@@ -718,9 +727,9 @@ class Roku():
 					if chunk:  # Filter out keep-alive new chunks
 						file.write(chunk)
 			file.close()
-			print(f"Image downloaded successfully: {self.ROKU_ICON}")
+			print(time.ctime(), f"Image downloaded successfully: {self.ROKU_ICON}")
 		except requests.exceptions.RequestException as e:
-			print(f"Error downloading image: {e}")
+			print(time.ctime(), f"Error downloading image: {e}")
 
 	def create_desktop_file(self):
 		appdir = os.path.join(os.path.expanduser("~"), '.local', 'share', 'applications')
@@ -749,7 +758,7 @@ class Roku():
 			self.ENSURE_PLAY_AT_START = False
 		else:
 			self.ENSURE_PLAY_AT_START = True
-		print(f"Play at start toggled:", self.PLAY_AT_START)
+		print(time.ctime(), f"Play at start toggled:", self.PLAY_AT_START)
 		return self.ENSURE_PLAY_AT_START
 
 	def getPlaybackPercentage(self):
@@ -794,16 +803,16 @@ class Roku():
 			set flag to trigger resume. This will stop it from doing so during rewinds/fwds and skips
 		"""
 		ret = self.PLAYBACK_PERCENTAGE - self.LAST_PLAYBACK_PERCENTAGE
-		print("tested playback percentage:", self.PLAYBACK_PERCENTAGE)
-		print("Play at start enabled:", self.ENSURE_PLAY_AT_START)
+		print(time.ctime(), "tested playback percentage:", self.PLAYBACK_PERCENTAGE)
+		print(time.ctime(), "Play at start enabled:", self.ENSURE_PLAY_AT_START)
 		if ret >= 1 and self.ENSURE_PLAY_AT_START:
-			print("Playback position not at start. Fixing...")
+			print(time.ctime(), "Playback position not at start. Fixing...")
 			self._keyPress('Select')
 			time.sleep(self.WAIT)
 			self._keyPress('Left')
 			time.sleep(self.WAIT)
 			self._keyPress('Select')
-		#print("diff:", ret)
+		#print(time.ctime(), "diff:", ret)
 
 	def OnStateChange(self, event=None, data=None, q=None):
 		if q is not None:
@@ -838,32 +847,32 @@ class Roku():
 				self.PLAYBACK_PERCENTAGE = self.getPlaybackPercentage()
 				self._get_percentage_diff()
 				if self.STATE not in self.STATES:
-					print("State added:", self.STATE, self.STATES)
+					print(time.ctime(), "State added:", self.STATE, self.STATES)
 					self.STATES.append(self.STATE)
 					event = 'state_added'
 					event_value = self.STATE
 				if self.STATE == 'play' or self.STATE == 'pause' or self.STATE == 'close':
-					print(self.STATE, self.PLAYBACK_PERCENTAGE)
+					print(time.ctime(), "state:", self.STATE, self.PLAYBACK_PERCENTAGE)
 					event = 'state_changed'
 					event_value = self.STATE
 				else:
-					print("state:", self.STATE)
+					print(time.ctime(), "state:", self.STATE, self.PLAYBACK_PERCENTAGE)
 					event = 'unhandled_state'
 					event_value = self.STATE
 					err = self.hasError()
 					if err:
-						print("has_error:", self.hasError())
+						print(time.ctime(), "has_error:", self.hasError())
 						event = 'error_state'
 						event_value = err
 				self.OnStateChange(event=event, data=event_value)
 
 			self.LAST_STATE = self.STATE
 		self.PLAYBACK_MONITOR_RUNNING = False
-		print("PlaybackMonitor exiting...")
+		print(time.ctime(), "PlaybackMonitor exiting...")
 		exit()
 
 	def PlaybackMonitorStop(self):
-		print(f"Killing thread...")
+		print(time.ctime(), f"Killing thread...")
 		self.PLAYBACK_MONITOR_RUNNING = False
 		self.PLAYBACK_MONITOR_THREAD.kill()
 
@@ -879,7 +888,7 @@ class Roku():
 		self.PLAYBACK_MONITOR_THREAD = Thread(target=self.PlaybackMonitorEventLoop, args=(self.PLAYBACK_MONITOR_QUEUE,))
 		self.PLAYBACK_MONITOR_THREAD.daemon = True
 		self.PLAYBACK_MONITOR_THREAD.start()
-		print(f"Playback thread started!")
+		print(time.ctime(), f"Playback thread started!")
 
 class rokuui(Roku):
 	def __init__(self, exec_setup=False, grab_keyboard=True, wait=1):
@@ -892,7 +901,7 @@ class rokuui(Roku):
 		self.GRAB_KEYBOARD = grab_keyboard
 		self.IS_TYPING = False
 		#self.= Roku(exec_setup=exec_setup)
-		#print("Remote Dict:", self.__dict__)
+		#print(time.ctime(), "Remote Dict:", self.__dict__)
 		self.run()
 
 	def _update_play_at_start(self):
@@ -907,7 +916,7 @@ class rokuui(Roku):
 			self.ENSURE_PLAY_AT_START = True
 		else:
 			self.ENSURE_PLAY_AT_START = False
-		print("Play at start toggled:", self.ENSURE_PLAY_AT_START)
+		print(time.ctime(), "Play at start toggled:", self.ENSURE_PLAY_AT_START)
 		return self.ENSURE_PLAY_AT_START
 
 	def frame_MediaControls(self):
@@ -961,14 +970,14 @@ class rokuui(Roku):
 		self.ui._add_rowToLayout()
 		self.ui.addToFrame(title='Media-Controls', layout=self.ui.LAYOUT)
 		self.ui.LAYOUT = []
-		print("Media control frame created!")
+		print(time.ctime(), "Media control frame created!")
 
 	def frame_Output(self):
 		#self.self.ui._add_elementToRow(sg.Combo(devices, default_value=default, size=(None, None), auto_size_text=True, change_submits=True, enable_events=True, disabled=False, right_click_menu=None, key='-DEVICES-', pad=None,  expand_x=False ,expand_y=False, tooltip="Select a device:", readonly=True), sg.Input(r.HOST, enable_events=True, key='-SET_DEVICE-', size=(None, 5), expand_x=False)
 		self.ui._add_elementToRow(sg.Multiline(default_text="", autoscroll=True, autoscroll_only_at_bottom=True, size=(35, 10), auto_size_text=True, change_submits=True, enable_events=True, do_not_clear = True, key='-OUTPUT-', wrap_lines=True, expand_x=False, expand_y=True))
 		self.ui._add_rowToLayout()
 		self.ui.addToFrame(title='Output')
-		print("Output frame created!")
+		print(time.ctime(), "Output frame created!")
 
 	def frame_deviceDiscovery(self):
 		self.ui._add_elementToRow(sg.Radio("SSDP", group_id="SCAN_TYPE", default=True, size=(None, None), auto_size_text=True, key="-SCAN_TYPE_SSDP-", tooltip="Set discovery type to 'ssdp' (Roku's DIAL implementation)", change_submits=True, enable_events=True, expand_x=False, expand_y=False))
@@ -982,7 +991,7 @@ class rokuui(Roku):
 			else:
 				devices = self.SETTINGS['devices']
 		except Exception as e:
-			print(f"Error in settings dictionary: bad key - {e}")
+			print(time.ctime(), f"Error in settings dictionary: bad key - {e}")
 			devices = self.DISCOVER()
 		self.ui._add_elementToRow(sg.Combo(devices, default_value=self.HOST, size=(None, None), auto_size_text=True, change_submits=True, enable_events=True, disabled=False, right_click_menu=None, key='-DEVICES-', pad=None,  expand_x=False ,expand_y=False, tooltip="Select a device:", readonly=True))
 		self.ui._add_elementToRow(sg.Button('Set!', key='-SET_DEVICE-'))
@@ -993,11 +1002,11 @@ class rokuui(Roku):
 		self.ui._add_elementToRow(sg.Multiline(default_text="", autoscroll=True, autoscroll_only_at_bottom=True, size=(35, 10), auto_size_text=True, change_submits=True, enable_events=True, do_not_clear = True, key='-OUTPUT-', wrap_lines=True, expand_x=False, expand_y=True))
 		self.ui._add_rowToLayout()
 		self.ui.addToFrame(title='Device Discovery')
-		print("Device discovery frame created!")
+		print(time.ctime(), "Device discovery frame created!")
 
 	def frame_getDeviceInfo(self):
 		info = self._query_device()
-		#print("info:", info)
+		#print(time.ctime(), "info:", info)
 		for k in info:
 			v = info[k]
 			self.ui._add_elementToRow(sg.Text(f"{k}='{v}'"))
@@ -1019,7 +1028,7 @@ class rokuui(Roku):
 		if scan_type == 'http':
 			self.WINDOW['-OUTPUT-'].update("Starting http full scan..")
 			devices = self._scan_network(full=True)
-			print("Found devices:", devices)
+			print(time.ctime(), "Found devices:", devices)
 			self.WINDOW['-DEVICES-'].update(values=devices, value=self.HOST)
 			devs = "\n".join(devices)
 			text = f"Found devices:\n{devs}"
@@ -1046,7 +1055,7 @@ class rokuui(Roku):
 			self.KEY_NAME = ascii_words[k]
 			self.KEYPRESS = f"{self.KEY_NAME}:{self.KEY_NUM}"
 			return f"TYPE_CHAR_{self.KEY_NAME}"
-		print("keystr:", keystr)
+		print(time.ctime(), "keystr:", keystr)
 		chars = getKeys()
 		if keystr is None:
 			return None
@@ -1075,18 +1084,18 @@ class rokuui(Roku):
 			else:#else use as is
 				name = self.KEY_NAME
 			if name == 'Space':
-				print("Space bar >> play/pause")
+				print(time.ctime(), "Space bar >> play/pause")
 				name = 'Play_Pause'
 				self.KEY_NAME = name
 			if name == 'Enter' or name == 'Return':
-				print("enter/return >> select")
+				print(time.ctime(), "enter/return >> select")
 				name = 'Select'
 				self.KEY_NAME = name
 			if name == 'Escape':
-				print("Escape >> Back")
+				print(time.ctime(), "Escape >> Back")
 				name = "Back"
 				self.KEY_NAME = name
-			print("name:", name)
+			print(time.ctime(), "name:", name)
 			if name in keys:
 				return name
 			elif self.KEY_NUM in keys:
@@ -1125,7 +1134,7 @@ def main(exec_setup=False, wait=1, start_playback_monitor=True):
 	while True:
 		e = r.PlaybackMonitorGet()
 		if e is not None:
-			print("Playback monitor:", e)
+			print(time.ctime(), "Playback monitor:", e)
 		#using window timeout instead of tine.sleep to pause.
 		#here to stop a request flood for status updates.
 		#TODO - work in threaded process and event queue.
@@ -1138,24 +1147,24 @@ def main(exec_setup=False, wait=1, start_playback_monitor=True):
 			k = r.testKeys(e)
 		except:
 			#if test keys failed, exit occured, close window
-			print("testKeys failed! Closing...")
+			print(time.ctime(), "testKeys failed! Closing...")
 			win.close()
 		if k is not None:
 			e = f"-{k.upper()}-"
-			print("key pressed:", e)
+			print(time.ctime(), "key pressed:", e)
 		if e == sg.WINDOW_CLOSED:
 			break
 		elif e == '__TIMEOUT__':
 			pass
 		elif e == '-TOGGLE_GRAB_KEYBOARD-':
 			r.GRAB_KEYBOARD = v[e]
-			print("Keyboard event capture toggled:", r.GRAB_KEYBOARD)
+			print(time.ctime(), "Keyboard event capture toggled:", r.GRAB_KEYBOARD)
 		elif e == '-SCAN_TYPE_HTTP-':
 			r.SCAN_TYPE = 'http'
-			print("Scan type set: http")
+			print(time.ctime(), "Scan type set: http")
 		elif e == '-SCAN_TYPE_SSDP-':
 			r.SCAN_TYPE = 'ssdp'
-			print("Scan type set: ssdp")
+			print(time.ctime(), "Scan type set: ssdp")
 		elif e == '-START_SCAN-':
 			r.scan()
 		elif e == '-SELECT-':
@@ -1185,12 +1194,12 @@ def main(exec_setup=False, wait=1, start_playback_monitor=True):
 		elif '-TYPE_CHAR_' in e:
 			k = e.split('-TYPE_CHAR_')[1].split('-')[0]
 			r._keyPress(k)
-			print(f"Sent keyboard input to roku: {k}")
+			print(time.ctime(), f"Sent keyboard input to roku: {k}")
 		elif e == '-Toggle_Ensure_Play_At_Start-' or e == '-TOGGLE_ENSURE_PLAY_AT_START-':
 			r.ENSURE_PLAY_AT_START = v[e]
 			r.TOGGLE_ENSURE_PLAY_AT_START = r._toggle_play_at_start()
 		else:
-			print(e, v)
+			print(time.ctime(), e, v)
 	exit()
 if __name__ == "__main__":
 	main()
